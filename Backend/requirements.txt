@@ -1,0 +1,11 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+pydantic-settings==2.3.4
+ultralytics==8.2.0
+opencv-python-headless==4.9.0.80
+pandas==2.2.2
+matplotlib==3.8.4
+numpy==1.26.4
+python-dotenv==1.0.1
+aiofiles==23.2.1
