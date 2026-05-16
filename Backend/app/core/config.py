@@ -26,6 +26,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:5177",
         "http://127.0.0.1:5177",
+        "https://delicate-valkyrie-8d5e3d.netlify.app"
     ]
 
     # ── App ──────────────────────────────────────────────────────────────────
