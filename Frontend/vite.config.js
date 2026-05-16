@@ -6,8 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8000",
-      "/outputs": "http://localhost:8000",
+      "/api": "https://yolo-hand-detection-backend01.onrender.com",
+      "/outputs": "https://yolo-hand-detection-backend01.onrender.com",
     },
   },
 });
