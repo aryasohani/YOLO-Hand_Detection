@@ -78,6 +78,14 @@ app.add_middleware(
 # Static Files
 # ──────────────────────────────────────────────────────────────────────────────
 
+# app.mount(
+#     "/outputs",
+#     StaticFiles(directory="app/outputs"),
+#     name="outputs",
+# )
+
+os.makedirs("app/outputs", exist_ok=True)
+
 app.mount(
     "/outputs",
     StaticFiles(directory="app/outputs"),
