@@ -4,9 +4,11 @@ Loads the YOLOv8 model once and exposes inference helpers.
 """
 
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
+import torch
 from ultralytics import YOLO
 
 from app.core.config import settings
@@ -18,8 +20,6 @@ _model = None
 
 
 def get_model(model_path: str = None):
-    logger.info("########## NEW FILE DEPLOYED ##########")
-
     global _model
 
     if _model is not None:
@@ -27,9 +27,29 @@ def get_model(model_path: str = None):
 
     path = Path(model_path) if model_path else Path(settings.MODEL_PATH)
 
-    logger.info(f"Model path = {path}")
+    logger.info("========== YOLO DEBUG ==========")
+    logger.info(f"Current working directory : {os.getcwd()}")
+    logger.info(f"Configured MODEL_PATH     : {settings.MODEL_PATH}")
+    logger.info(f"Resolved model path       : {path.resolve()}")
+    logger.info(f"Model exists?             : {path.exists()}")
+    logger.info(f"Torch version             : {torch.__version__}")
 
-    _model = YOLO(str(path))
+    try:
+        from ultralytics import __version__ as uv
+        logger.info(f"Ultralytics version       : {uv}")
+    except Exception:
+        logger.exception("Could not determine Ultralytics version")
+
+    logger.info("Loading YOLO model...")
+
+    try:
+        _model = YOLO(str(path))
+        logger.info("✅ YOLO model loaded successfully.")
+    except Exception:
+        logger.exception("❌ Failed to load YOLO model")
+        raise
+
+    logger.info("================================")
 
     return _model
 
