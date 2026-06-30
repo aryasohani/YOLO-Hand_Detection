@@ -4,7 +4,7 @@
  */
 
 const API_BASE =
-  import.meta.env.VITE_API_URL || "https://yolo-hand-detection-backend01.onrender.com";
+  import.meta.env.VITE_API_URL || "https://yolo-hand-detectionn.onrender.com";
 
 /**
  * Convert backend relative paths into full URLs
