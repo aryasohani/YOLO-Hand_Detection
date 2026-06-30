@@ -1,6 +1,6 @@
 """
 yolo_service.py
-Loads the YOLOv8 model once and exposes inference helpers.
+Loads YOLOv8 once and provides safe inference.
 """
 
 import logging
@@ -15,9 +15,12 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Singleton model
 _model = None
 
+
+# ─────────────────────────────────────────────────────────────
+# Model Loader (Singleton)
+# ─────────────────────────────────────────────────────────────
 
 def get_model(model_path: str = None):
     global _model
@@ -28,70 +31,77 @@ def get_model(model_path: str = None):
     path = Path(model_path) if model_path else Path(settings.MODEL_PATH)
 
     logger.info("========== YOLO DEBUG ==========")
-    logger.info(f"Current working directory : {os.getcwd()}")
-    logger.info(f"Configured MODEL_PATH     : {settings.MODEL_PATH}")
-    logger.info(f"Resolved model path       : {path.resolve()}")
-    logger.info(f"Model exists?             : {path.exists()}")
-    logger.info(f"Torch version             : {torch.__version__}")
+    logger.info(f"CWD                   : {os.getcwd()}")
+    logger.info(f"MODEL_PATH            : {path}")
+    logger.info(f"MODEL_EXISTS          : {path.exists()}")
+    logger.info(f"Torch version         : {torch.__version__}")
 
     try:
         from ultralytics import __version__ as uv
-        logger.info(f"Ultralytics version       : {uv}")
+        logger.info(f"Ultralytics version   : {uv}")
     except Exception:
-        logger.exception("Could not determine Ultralytics version")
+        logger.warning("Could not read ultralytics version")
+
+    if not path.exists():
+        raise FileNotFoundError(f"Model not found at: {path}")
 
     logger.info("Loading YOLO model...")
 
     try:
         _model = YOLO(str(path))
+        _model.fuse()  # 🔥 faster inference (important for Render)
         logger.info("✅ YOLO model loaded successfully.")
-    except Exception:
-        logger.exception("❌ Failed to load YOLO model")
-        raise
+    except Exception as e:
+        logger.exception("❌ YOLO load failed")
+        raise e
 
     logger.info("================================")
 
     return _model
 
 
+# ─────────────────────────────────────────────────────────────
+# Safe Inference
+# ─────────────────────────────────────────────────────────────
+
 def run_inference(frame: np.ndarray, conf_threshold: float = 0.25):
     """
-    Run inference on a single frame.
-
-    Returns a dictionary describing the highest-confidence detection.
+    Run YOLO inference safely on a single frame.
+    Returns best detection (highest confidence).
     """
+
+    if frame is None or not isinstance(frame, np.ndarray):
+        return _empty_result()
 
     model = get_model()
 
-    height, width = frame.shape[:2]
+    h, w = frame.shape[:2]
 
-    results = model.predict(
-        source=frame,
-        conf=conf_threshold,
-        verbose=False,
-    )[0]
+    try:
+        results = model.predict(
+            source=frame,
+            conf=conf_threshold,
+            verbose=False
+        )[0]
+    except Exception as e:
+        logger.error(f"YOLO inference error: {e}")
+        return _empty_result()
 
-    if len(results.boxes) == 0:
-        return {
-            "detected": False,
-            "cx_px": None,
-            "cy_px": None,
-            "cx_norm": None,
-            "cy_norm": None,
-            "bbox_x1": None,
-            "bbox_y1": None,
-            "bbox_x2": None,
-            "bbox_y2": None,
-            "confidence": 0.0,
-        }
+    if results.boxes is None or len(results.boxes) == 0:
+        return _empty_result()
 
-    best_idx = int(results.boxes.conf.argmax())
+    # ── FIX: correct confidence selection (IMPORTANT BUG FIX) ──
+    confs = results.boxes.conf.cpu().numpy()
+    best_idx = int(np.argmax(confs))
 
     box = results.boxes[best_idx]
 
-    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-
-    confidence = float(box.conf[0])
+    try:
+        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+        conf = float(box.conf[0])
+    except Exception as e:
+        logger.error(f"Box parsing error: {e}")
+        return _empty_result()
 
     cx = (x1 + x2) / 2
     cy = (y1 + y2) / 2
@@ -100,11 +110,30 @@ def run_inference(frame: np.ndarray, conf_threshold: float = 0.25):
         "detected": True,
         "cx_px": round(float(cx), 2),
         "cy_px": round(float(cy), 2),
-        "cx_norm": round(float(cx / width), 6),
-        "cy_norm": round(float(cy / height), 6),
+        "cx_norm": round(float(cx / w), 6),
+        "cy_norm": round(float(cy / h), 6),
         "bbox_x1": round(float(x1), 2),
         "bbox_y1": round(float(y1), 2),
         "bbox_x2": round(float(x2), 2),
         "bbox_y2": round(float(y2), 2),
-        "confidence": round(confidence, 4),
+        "confidence": round(conf, 4),
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Empty fallback (prevents pipeline crash)
+# ─────────────────────────────────────────────────────────────
+
+def _empty_result():
+    return {
+        "detected": False,
+        "cx_px": None,
+        "cy_px": None,
+        "cx_norm": None,
+        "cy_norm": None,
+        "bbox_x1": None,
+        "bbox_y1": None,
+        "bbox_x2": None,
+        "bbox_y2": None,
+        "confidence": 0.0,
     }
