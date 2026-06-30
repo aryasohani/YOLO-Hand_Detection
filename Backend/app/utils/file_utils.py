@@ -40,9 +40,11 @@ def make_job_dirs(upload_dir: str, output_dir: str) -> tuple[str, Path, Path]:
     return job_id, Path(upload_dir), out_dir
 
 
-def cleanup_job(upload_path: Path, output_dir: Path) -> None:
+def cleanup_job(upload_path, output_dir) -> None:
     """Remove upload file and output directory for a job (e.g. on error)."""
     try:
+        upload_path = Path(upload_path)
+        output_dir  = Path(output_dir)
         if upload_path.exists():
             upload_path.unlink()
         if output_dir.exists():
