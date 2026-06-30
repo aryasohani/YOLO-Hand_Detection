@@ -3,8 +3,8 @@ uvicorn[standard]==0.29.0
 python-multipart==0.0.9
 pydantic-settings==2.3.4
 
-torch==2.5.1
-torchvision==0.20.1
+torch==2.4.1
+torchvision==0.19.1
 ultralytics==8.3.170
 
 opencv-python-headless==4.9.0.80
