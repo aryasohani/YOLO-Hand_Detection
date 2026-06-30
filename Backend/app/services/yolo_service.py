@@ -18,9 +18,8 @@ _model = None
 
 
 def get_model(model_path: str = None):
-    """
-    Load and cache the YOLO model.
-    """
+    logger.info("########## NEW FILE DEPLOYED ##########")
+
     global _model
 
     if _model is not None:
@@ -28,20 +27,9 @@ def get_model(model_path: str = None):
 
     path = Path(model_path) if model_path else Path(settings.MODEL_PATH)
 
-    if not path.exists():
-        raise FileNotFoundError(f"Model not found: {path}")
+    logger.info(f"Model path = {path}")
 
-    try:
-        logger.info(f"Loading YOLO model from {path}")
-
-        # Load model directly from the .pt file
-        _model = YOLO(str(path))
-
-        logger.info("✅ YOLO model loaded successfully.")
-
-    except Exception as e:
-        logger.exception(f"❌ Failed to load YOLO model: {e}")
-        raise
+    _model = YOLO(str(path))
 
     return _model
 
