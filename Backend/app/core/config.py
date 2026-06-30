@@ -3,15 +3,18 @@ core/config.py
 Centralised settings loaded from environment variables / .env file.
 """
 
-from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8",extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",          # ignores extra env vars Render injects
+    )
 
     # ── Model ────────────────────────────────────────────────────────────────
-    MODEL_PATH: str = "best.pt"
+    MODEL_PATH: str = "models/best.pt"
     CONF_THRESHOLD: float = 0.25
     TRAIL_LENGTH: int = 30
 
@@ -21,13 +24,7 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 500
 
     # ── CORS ─────────────────────────────────────────────────────────────────
-    ALLOWED_ORIGINS: list[str] = [
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:5177",
-        "http://127.0.0.1:5177",
-        "https://yolo-hand-detection-front.vercel.app"
-    ]
+    ALLOWED_ORIGINS: list[str] = ["*"]
 
     # ── App ──────────────────────────────────────────────────────────────────
     APP_TITLE: str = "HandTrack AI"

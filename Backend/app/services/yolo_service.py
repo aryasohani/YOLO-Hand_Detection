@@ -2,7 +2,9 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import torch
 from ultralytics import YOLO  # type: ignore
+from ultralytics.nn.tasks import DetectionModel  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +31,39 @@ def get_model():
                     f"Model not found: {MODEL_PATH}"
                 )
 
-            # Load YOLO model
-            _model = YOLO(str(MODEL_PATH))
+            def _with_trusted_globals(action):
+                try:
+                    with torch.serialization.safe_globals([DetectionModel]):
+                        return action()
+                except Exception:
+                    try:
+                        with torch.serialization.add_safe_globals([DetectionModel]):
+                            return action()
+                    except Exception:
+                        # As a last resort, run the action without safe context.
+                        return action()
+
+            # Load YOLO model with trusted deserialization for this checkpoint.
+            try:
+                _model = _with_trusted_globals(lambda: YOLO(str(MODEL_PATH)))
+            except Exception as exc:
+                logger.warning(
+                    "YOLO load failed, will retry with torch.load(weights_only=False) without safe_globals: %s",
+                    exc,
+                )
+
+                # User selected option 1: force full deserialization. This can execute
+                # code from the checkpoint — only do this if you trust the model file.
+                try:
+                    loaded = torch.load(str(MODEL_PATH), weights_only=False)
+                except TypeError:
+                    # Older torch versions may not accept weights_only param
+                    loaded = torch.load(str(MODEL_PATH))
+
+                if isinstance(loaded, DetectionModel):
+                    _model = loaded
+                else:
+                    _model = YOLO(loaded)
 
             logger.info(f"✅ YOLOv8 model loaded from {MODEL_PATH}")
 
