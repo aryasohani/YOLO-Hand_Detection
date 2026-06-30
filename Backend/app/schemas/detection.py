@@ -1,13 +1,10 @@
 """
 api/routes/detection.py
-Endpoints:
-POST /api/detect
-GET  /api/results/{job_id}
+Endpoints: POST /api/detect  |  GET /api/results/{job_id}
 """
 
 import logging
 import time
-import traceback
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -28,100 +25,75 @@ router = APIRouter()
 MAX_BYTES = settings.MAX_FILE_SIZE_MB * 1024 * 1024
 
 
-@router.post(
-    "/detect",
-    response_model=DetectionResponse,
-    summary="Detect hands in uploaded video",
-)
-async def detect(
-    file: UploadFile = File(
-        ..., description="Video file (mp4/avi/mov/mkv/webm)"
-    )
-):
+@router.post("/detect", response_model=DetectionResponse, summary="Detect hands in uploaded video")
+async def detect(file: UploadFile = File(..., description="Video file (mp4/avi/mov/mkv/webm)")):
+    """
+    **Upload a video → run YOLOv8 hand detection → return annotated results.**
 
+    Processing steps:
+    1. Validate file type and size
+    2. Save upload with UUID filename
+    3. Process every frame via YOLO (bounding boxes + center coords)
+    4. Write annotated output video with gradient trajectory trail
+    5. Export full + clean CSV files
+    6. Generate 3-panel matplotlib trajectory plot
+    7. Return static URLs for all outputs + summary statistics
+    """
+    # ── Validate extension ──────────────────────────────────────────────────
     try:
         ext = validate_video_extension(file.filename)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    # ── Read & size-check ───────────────────────────────────────────────────
     content = await file.read()
-
     if len(content) > MAX_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"File too large. Max allowed: {settings.MAX_FILE_SIZE_MB} MB",
+            detail=f"File too large. Max allowed: {settings.MAX_FILE_SIZE_MB} MB"
         )
 
+    # ── Create job directories ──────────────────────────────────────────────
     job_id, upload_dir, output_dir = make_job_dirs(
-        settings.UPLOAD_DIR,
-        settings.OUTPUT_DIR,
+        settings.UPLOAD_DIR, settings.OUTPUT_DIR
     )
-
     input_path = upload_dir / f"{job_id}{ext}"
 
     with open(input_path, "wb") as f:
         f.write(content)
 
-    logger.info(
-        f"📥 Job {job_id} | {file.filename} | {len(content)/1024/1024:.2f} MB"
-    )
+    logger.info(f"📥 Job {job_id} | {file.filename} | {len(content)/1024/1024:.1f} MB")
 
+    # ── File paths ──────────────────────────────────────────────────────────
     output_video = output_dir / "output_trajectory.mp4"
-    full_csv = output_dir / "trajectory_full.csv"
-    clean_csv = output_dir / "trajectory_clean.csv"
-    plot_png = output_dir / "trajectory_plot.png"
+    full_csv     = output_dir / "trajectory_full.csv"
+    clean_csv    = output_dir / "trajectory_clean.csv"
+    plot_png     = output_dir / "trajectory_plot.png"
 
+    # ── Process ─────────────────────────────────────────────────────────────
     start = time.time()
-
     try:
-
         trajectory = process_video(
-            str(input_path),
-            str(output_video),
+            str(input_path), str(output_video),
             conf_threshold=settings.CONF_THRESHOLD,
         )
-
-        stats = save_csv(
-            trajectory,
-            str(full_csv),
-            str(clean_csv),
-        )
-
-        save_plot(
-            trajectory,
-            str(plot_png),
-        )
-
+        stats = save_csv(trajectory, str(full_csv), str(clean_csv))
+        save_plot(trajectory, str(plot_png))
     except Exception as exc:
-
-        logger.exception(f"❌ Job {job_id} failed")
-
-        cleanup_job(
-            input_path,
-            output_dir,
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Processing error: {exc}",
-        )
+        import traceback
+        logger.error(f"❌ Job {job_id} failed: {exc}")
+        logger.error(traceback.format_exc())   # full traceback in Render logs
+        cleanup_job(input_path, output_dir)
+        raise HTTPException(status_code=500, detail=f"Processing error: {str(exc)}")
 
     processing_time = round(time.time() - start, 2)
 
-    total_frames = len(trajectory)
-
-    detected_frames = sum(
-        1 for frame in trajectory if frame["detected"]
-    )
-
-    detection_pct = (
-        round(detected_frames * 100 / total_frames, 1)
-        if total_frames
-        else 0
-    )
+    # ── Build response ──────────────────────────────────────────────────────
+    total_frames    = len(trajectory)
+    detected_frames = sum(1 for d in trajectory if d["detected"])
+    detection_pct   = round(100 * detected_frames / total_frames, 1) if total_frames else 0.0
 
     base = f"/outputs/{job_id}"
-
     return DetectionResponse(
         success=True,
         job_id=job_id,
@@ -130,9 +102,9 @@ async def detect(
         csv_clean_url=f"{base}/trajectory_clean.csv",
         graph_url=f"{base}/trajectory_plot.png",
         stats={
-            "total_frames": total_frames,
+            "total_frames":    total_frames,
             "detected_frames": detected_frames,
-            "detection_pct": detection_pct,
+            "detection_pct":   detection_pct,
             "processing_time": processing_time,
             **stats,
         },
@@ -142,27 +114,14 @@ async def detect(
 @router.get(
     "/results/{job_id}",
     response_model=ResultFilesResponse,
-    summary="List output files",
+    summary="List output files for a completed job",
 )
 async def get_result(job_id: str):
-
+    """Return static URLs for all files generated by a previous detection job."""
     output_dir = Path(settings.OUTPUT_DIR) / job_id
-
     if not output_dir.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Job '{job_id}' not found",
-        )
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
     base = f"/outputs/{job_id}"
-
-    files = {
-        f.name: f"{base}/{f.name}"
-        for f in output_dir.iterdir()
-        if f.is_file()
-    }
-
-    return ResultFilesResponse(
-        job_id=job_id,
-        files=files,
-    )
+    files = {f.name: f"{base}/{f.name}" for f in output_dir.iterdir() if f.is_file()}
+    return ResultFilesResponse(job_id=job_id, files=files)
